@@ -13,6 +13,14 @@ npm run dev        # :5191
 npm test           # node --test
 ```
 
+## BSV OS runner (no browser keys)
+
+Opened inside the BSV OS runner, the game routes every wallet operation —
+payments, mints, NFT transfers, atomic-swap listings and buys — through the
+OS daemon's `window.bsv` intents under the app origin policy. No keys touch
+the page; the built-in/Yours backends stay as fallbacks outside the runner.
+Needs one static file to install: `https://entangleit.com/manifest.json`.
+
 ## Economy (USD-denominated, settled in sats at the live rate)
 
 | Action | Price |

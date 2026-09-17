@@ -13,6 +13,7 @@ import { useSave, buzz } from "./store.ts";
 import { appendLedger, getBsvUsd, usdToSats } from "./chain.ts";
 import { gwStake, type GW } from "./gw.ts";
 import { embeddedSession } from "./embwallet.tsx";
+import { osSession } from "./oswallet.ts";
 import { useBsv } from "./bsv.ts";
 import type { TwetchSession } from "./twetch.ts";
 
@@ -188,6 +189,8 @@ export function PvpPanel({ say, busy, setBusy, tw, onLogin, onEvolve }: {
   };
 
   const needGw = (): GW | null => {
+    const os = osSession();
+    if (os) return { kind: "os", ...os };
     if (bsv.ctx) return { kind: "yours", ctx: bsv.ctx };
     const s = embeddedSession();
     if (s) return { kind: "embedded", ...s };
@@ -356,8 +359,10 @@ export function PvpPanel({ say, busy, setBusy, tw, onLogin, onEvolve }: {
   };
 
   const settle = async (id: string, amountSats: number, claimTo: string) => {
+    const os = osSession();
     let gw: GW | null = null;
-    if (bsv.ctx) gw = { kind: "yours", ctx: bsv.ctx };
+    if (os) gw = { kind: "os", ...os };
+    else if (bsv.ctx) gw = { kind: "yours", ctx: bsv.ctx };
     else {
       const s = embeddedSession();
       if (s) gw = { kind: "embedded", ...s };
@@ -369,6 +374,9 @@ export function PvpPanel({ say, busy, setBusy, tw, onLogin, onEvolve }: {
       if (gw.kind === "yours") {
         const { payoutWinner } = await import("./bsv.ts");
         txid = await payoutWinner(gw.ctx, claimTo, amountSats, season, `pvp-${id.slice(0, 8)}`);
+      } else if (gw.kind === "os") {
+        const { gwPayout } = await import("./gw.ts");
+        txid = await gwPayout(gw, claimTo, amountSats, season, `pvp-${id.slice(0, 8)}`);
       } else {
         const { fetchSpendable, sendBuilt } = await import("./embedded.ts");
         const utxos = await fetchSpendable(gw.address);

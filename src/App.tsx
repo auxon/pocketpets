@@ -14,6 +14,7 @@ import {
 import { drawPetCard, useBsv } from "./bsv";
 import { arcStatus, p2pkhScript } from "./embedded.ts";
 import { embeddedSession, useEmbeddedWallet } from "./embwallet";
+import { ensureOsAddress, isOsWallet, osBsv, osSession } from "./oswallet";
 import { gwAnchor, gwAtomicBuy, gwAtomicList, gwEnter, gwFoodRefill, gwMarketBuy, gwMint, gwPayout, gwPull, gwTransferNft, type GW } from "./gw";
 import { cancelListing, fetchListing, fetchRecentSales, fetchTxDetails, listMarket, markBought, markSettled, postListing, type MarketListing } from "./market";
 import { startLogin, useTwetch, type TwetchSession } from "./twetch";
@@ -195,6 +196,8 @@ export default function App() {
   };
 
   const needWallet = (): GW | null => {
+    const os = osSession();
+    if (os) return { kind: "os", ...os };
     if (bsv.connected && bsv.ctx) return { kind: "yours", ctx: bsv.ctx };
     const s = embeddedSession();
     if (s) return { kind: "embedded", ...s };
@@ -625,7 +628,13 @@ function CollectionTab({ pets, activeUid, mintingUid, onSelect, onShare, onMint,
 function WalletCard({ say }: { say(t: string): void }) {
   const bsv = useBsv();
   const emb = useEmbeddedWallet();
-  const [which, setWhich] = useState<"yours" | "builtin">(bsv.status === "connected" ? "yours" : "builtin");
+  const osAvail = isOsWallet();
+  const [which, setWhich] = useState<"yours" | "builtin" | "os">(
+    osAvail ? "os" : bsv.status === "connected" ? "yours" : "builtin",
+  );
+  const [osAddr, setOsAddr] = useState<string | null>(null);
+  const [osBal, setOsBal] = useState<number | null>(null);
+  const [osErr, setOsErr] = useState<string | null>(null);
   const [qr, setQr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -645,16 +654,46 @@ function WalletCard({ say }: { say(t: string): void }) {
   const run = (p: Promise<unknown>, ok: string) =>
     p.then(() => say(ok)).catch((e: unknown) => say(e instanceof Error ? e.message : "failed"));
 
+  const osRefresh = async () => {
+    try {
+      const addr = await ensureOsAddress();
+      setOsAddr(addr);
+      const b = await osBsv().getBalance();
+      setOsBal(b.confirmed + b.unconfirmed);
+      setOsErr(null);
+    } catch (e) {
+      setOsErr(e instanceof Error ? e.message : "OS wallet unreachable");
+    }
+  };
+
+  useEffect(() => {
+    if (osAvail && which === "os" && !osAddr) void osRefresh();
+  });
+
+  const osTabs: Array<"yours" | "builtin" | "os"> = osAvail ? ["os", "yours", "builtin"] : ["yours", "builtin"];
+
   return (
     <div>
       <div className="seg">
-        {(["yours", "builtin"] as const).map((w) => (
+        {osTabs.map((w) => (
           <button key={w} className={which === w ? "segbtn on" : "segbtn"} onClick={() => setWhich(w)}>
-            {w === "yours" ? "Yours" : "Built-in"}
+            {w === "yours" ? "Yours" : w === "os" ? "OS" : "Built-in"}
           </button>
         ))}
       </div>
-      {which === "yours" ? (
+      {which === "os" ? (
+        <div>
+          <div className="wrow">
+            <span className="pill ok">OS custody · {osAddr ? short(osAddr, 6) : "…"}</span>
+            <button onClick={() => void osRefresh()}>↻ {osBal === null ? "…" : `${osBal.toLocaleString()} sats`}</button>
+          </div>
+          <p className="muted">Keys live in the OS daemon under policy — nothing to back up or export here. Approve spends in the wallet panel.</p>
+          {osErr && <p className="muted">{osErr}</p>}
+          {osAddr && <div className="row3">
+            <button onClick={() => void navigator.clipboard.writeText(osAddr).then(() => say("Address copied"))}>📋 Copy</button>
+          </div>}
+        </div>
+      ) : which === "yours" ? (
         bsv.status === "connected" ? (
           <div className="wrow">
             <span className="pill ok">connected{bsv.identityKey ? ` · ${short(bsv.identityKey, 6)}` : ""}</span>
@@ -866,6 +905,8 @@ function MarketTab({ busy, setBusy, say, tw, onLogin }: {
   };
 
   const gw = (): GW | null => {
+    const os = osSession();
+    if (os) return { kind: "os", ...os };
     if (bsv.ctx) return { kind: "yours", ctx: bsv.ctx };
     const s = embeddedSession();
     return s ? { kind: "embedded", ...s } : null;
@@ -954,19 +995,24 @@ function MarketTab({ busy, setBusy, say, tw, onLogin }: {
     if (!Number.isInteger(price) || price < 1) return say("Enter a price in sats (min 1)");
     const escrow = save.feeAddress;
     const sp = speciesOf(pet);
+    const os = osSession();
     const s = embeddedSession();
+    const w = os ? { kind: "os" as const, ...os } : s ? { kind: "embedded" as const, ...s } : null;
     setBusy("list");
     const postAtomic = async () => {
-      if (!s || !pet.nft?.scriptHex) throw new Error("atomic needs the built-in wallet");
+      const nft = pet.nft;
+      if (!w || !nft || (w.kind === "embedded" && !nft.scriptHex)) {
+        throw new Error("atomic needs a wallet (OS runner or built-in)");
+      }
       // preflight 1: dead mint (rejected tx) — clear it instead of listing a corpse
       try {
-        const st = await arcStatus(pet.nft.txid);
+        const st = await arcStatus(nft.txid);
         if (st.txStatus === "REJECTED") {
           setSave((prev) => ({
             ...prev,
             pets: prev.pets.map((x) => (x.uid === pet.uid ? { ...x, nft: undefined } : x)),
           }));
-          await recordHere("mint_failed", pet.uid, `rejected ${pet.nft.txid.slice(0, 12)} — cleared before list`);
+          await recordHere("mint_failed", pet.uid, `rejected ${nft.txid.slice(0, 12)} — cleared before list`);
           throw new Error("That mint never confirmed (double-spend). Record cleared — tap Mint again first.");
         }
       } catch (e) {
@@ -974,13 +1020,13 @@ function MarketTab({ busy, setBusy, say, tw, onLogin }: {
         // status unknown — proceed, server is authoritative
       }
       // preflight 2: this NFT was minted into a different wallet
-      if (pet.nft.mintAddress && pet.nft.mintAddress !== s.address) {
-        throw new Error(`This NFT lives in another wallet (minted to ${short(pet.nft.mintAddress, 6)}). Unlock that wallet to list it.`);
+      if (nft.mintAddress && nft.mintAddress !== w.address) {
+        throw new Error(`This NFT lives in another wallet (minted to ${short(nft.mintAddress, 6)}). Unlock that wallet to list it.`);
       }
       // atomic: pre-sign only — NFT stays in your wallet until bought
-      const offer = await gwAtomicList({ kind: "embedded", ...s }, pet, price);
+      const offer = await gwAtomicList(w, pet, price);
       await postListing({
-        origin: pet.nft.origin, nickname: pet.nickname, species: sp.name, emoji: sp.emoji,
+        origin: nft.origin, nickname: pet.nickname, species: sp.name, emoji: sp.emoji,
         rarity: sp.rarity, level: pet.level, priceSats: price, seller: offer.seller,
         sellerHandle: tw.handle, escrowTxid: "", escrowAddress: "",
         sellerUnlock: offer.unlockHex, payScript: offer.payScriptHex,
@@ -1052,12 +1098,14 @@ function MarketTab({ busy, setBusy, say, tw, onLogin }: {
     if (!tw) return say("Sign in with Twetch to buy");
     const atomic = !!l.seller_unlock;
     if (atomic) {
+      const os = osSession();
       const s = embeddedSession();
-      if (!s) return say("Atomic buys need the built-in wallet unlocked (BSV tab)");
+      const w = os ? { kind: "os" as const, ...os } : s ? { kind: "embedded" as const, ...s } : null;
+      if (!w) return say("Atomic buys need a wallet (OS runner or built-in, BSV tab)");
       setBusy("buy");
       try {
         const { txid, feeSats, nftVout, nftScriptHex } = await gwAtomicBuy(
-          { kind: "embedded", ...s },
+          w,
           { origin: l.origin, price_sats: l.price_sats, seller_unlock: l.seller_unlock!, pay_script: l.pay_script! },
           save.feeAddress
         );
@@ -1074,7 +1122,7 @@ function MarketTab({ busy, setBusy, say, tw, onLogin }: {
           energy: 100,
           wins: 0,
           pulls: 0,
-          nft: { origin: l.origin, txid, vout: nftVout, scriptHex: nftScriptHex, mintedAt: Date.now(), mintAddress: s.address },
+          nft: { origin: l.origin, txid, vout: nftVout, scriptHex: nftScriptHex, mintedAt: Date.now(), mintAddress: w.address },
         };
         bought.hp = maxHp(bought);
         const ledger = await appendLedger(save.ledger, "market_buy", bought.uid, `atomic ${l.nickname} ${l.price_sats}sats + ${feeSats} fee ${txid.slice(0, 12)}`);
@@ -1393,6 +1441,8 @@ function BsvTab({ busy, setBusy, say, verifyMsg, setVerifyMsg, tw, onLogin, onLo
   const payoutDefault = Math.max(0, Math.floor((potSats - paidOut) * (1 - POT_FEE_BPS / 10000)));
 
   const gw = (): GW | null => {
+    const os = osSession();
+    if (os) return { kind: "os", ...os };
     if (bsv.ctx) return { kind: "yours", ctx: bsv.ctx };
     const s = embeddedSession();
     return s ? { kind: "embedded", ...s } : null;
@@ -1587,12 +1637,14 @@ function TransferRow({ pet, say, setBusy, busy }: {
         <input value={to} placeholder="1..." onChange={(e) => setTo(e.target.value)} />
       </label>
       <div className="row2">
-        <button disabled={busy || !/^1[a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(to.trim())} onClick={() => void (async () => {
+        <button disabled={busy || !/^1[a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(to.trim())}           onClick={() => void (async () => {
+          const os = osSession();
           const s = embeddedSession();
-          if (!s) return say("Unlock the built-in wallet first");
+          const w = os ? { kind: "os" as const, ...os } : s ? { kind: "embedded" as const, ...s } : null;
+          if (!w) return say("Unlock a wallet first (OS runner or built-in)");
           setBusy("transfer");
           try {
-            const r = await gwTransferNft({ kind: "embedded", ...s }, pet, to.trim());
+            const r = await gwTransferNft(w, pet, to.trim());
             const ledger = await appendLedger(save.ledger, "transfer", pet.uid, `-> ${to.trim().slice(0, 12)} ${r.txid.slice(0, 12)}`);
             setSave((prev) => ({
               ...prev, ledger,

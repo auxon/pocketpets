@@ -9,6 +9,7 @@ import {
 import { anchorTip, collectFee, enterCup, mintPetNft, payMany, payoutWinner, petArtworkJpeg } from "./bsv";
 import { fetchSpendable, inscriptionScript, p2pkhScript, resolveNftUtxo, sendBuilt } from "./embedded.ts";
 import { broadcast } from "./embedded.ts";
+import { osBsv } from "./oswallet.ts";
 import { recordPending } from "./pending.ts";
 import { completeSwap, createSwapOffer, type SwapOffer } from "./atomic.ts";
 
@@ -21,7 +22,11 @@ export interface EmbW {
   wif: string;
   address: string;
 }
-export type GW = YoursW | EmbW;
+export interface OsW {
+  kind: "os";
+  address: string;
+}
+export type GW = YoursW | EmbW | OsW;
 
 export interface MintOut {
   txid: string;
@@ -45,6 +50,19 @@ export async function gwMint(gw: GW, pet: Pet, feeAddress: string): Promise<Mint
     const r = await mintPetNft(gw.ctx, pet);
     return { ...r, feeTxid };
   }
+  if (gw.kind === "os") {
+    const art = petArtworkJpeg(pet);
+    const contentHash = await bytesHashHex(art);
+    const dataHex = [...art].map((b) => b.toString(16).padStart(2, "0")).join("");
+    const { price } = await getBsvUsd();
+    const feeSats = usdToSats(MINT_FEE_USD, price);
+    const sp = speciesOf(pet);
+    const r = await osBsv().inscribe(dataHex, "image/jpeg", undefined,
+      { to: feeAddress, sats: feeSats },
+      ["POCKETPETS-MINT", pet.uid, sp.id, contentHash.slice(0, 16)]);
+    const script = inscriptionScript(gw.address, "image/jpeg", art);
+    return { txid: r.txid, origin: `${r.txid}.0`, contentHash, feeTxid: r.txid, scriptHex: script.toHex() };
+  }
   const art = petArtworkJpeg(pet);
   const contentHash = await bytesHashHex(art);
   const script = inscriptionScript(gw.address, "image/jpeg", art);
@@ -67,6 +85,12 @@ export async function gwAnchor(gw: GW, pot: string, feeAddr: string, tip: string
   const { price } = await getBsvUsd();
   const feeSats = usdToSats(ACTION_FEE_USD, price);
   if (gw.kind === "yours") return { txid: await anchorTip(gw.ctx, pot, feeAddr, feeSats, tip), feeSats };
+  if (gw.kind === "os") {
+    const { txid } = await osBsv().spend(
+      [{ to: pot, sats: 1 }, { to: feeAddr, sats: feeSats }],
+      ["POCKETPETS-ANCHOR", tip]);
+    return { txid, feeSats };
+  }
   const utxos = await fetchSpendable(gw.address);
   const { txid } = await sendBuilt({
     wif: gw.wif,
@@ -89,6 +113,12 @@ export async function gwEnter(
   const feeSats = usdToSats(ACTION_FEE_USD, price);
   if (gw.kind === "yours") {
     return { txid: await enterCup(gw.ctx, pot, feeAddr, entrySats, feeSats, petUid, tip), entrySats, feeSats };
+  }
+  if (gw.kind === "os") {
+    const { txid } = await osBsv().spend(
+      [{ to: pot, sats: entrySats }, { to: feeAddr, sats: feeSats }],
+      ["POCKETPETS-ENTRY", petUid, tip]);
+    return { txid, entrySats, feeSats };
   }
   const utxos = await fetchSpendable(gw.address);
   const { txid } = await sendBuilt({
@@ -114,6 +144,12 @@ export async function gwFoodRefill(
     const feeTxid = await collectFee(gw.ctx, feeAddress, refillSats, "food");
     return { txid: feeTxid, refillSats };
   }
+  if (gw.kind === "os") {
+    const { txid } = await osBsv().spend(
+      [{ to: feeAddress, sats: refillSats }],
+      ["POCKETPETS-FOOD"]);
+    return { txid, refillSats };
+  }
   const utxos = await fetchSpendable(gw.address);
   const { txid } = await sendBuilt({
     wif: gw.wif,
@@ -136,6 +172,12 @@ export async function gwStake(
       { address: potAddress, satoshis: amountSats, data: ["POCKETPETS-STAKE", matchLabel] },
       { address: feeAddress, satoshis: feeSats, data: ["POCKETPETS-FEE", "stake"] },
     ], "Stake payment failed");
+    return { txid, feeSats };
+  }
+  if (gw.kind === "os") {
+    const { txid } = await osBsv().spend(
+      [{ to: potAddress, sats: amountSats }, { to: feeAddress, sats: feeSats }],
+      ["POCKETPETS-STAKE", matchLabel]);
     return { txid, feeSats };
   }
   const utxos = await fetchSpendable(gw.address);
@@ -162,6 +204,12 @@ export async function gwPull(
     const feeTxid = await collectFee(gw.ctx, feeAddress, pullSats, "pull");
     return { txid: feeTxid, pullSats };
   }
+  if (gw.kind === "os") {
+    const { txid } = await osBsv().spend(
+      [{ to: feeAddress, sats: pullSats }],
+      ["POCKETPETS-PULL", petUid]);
+    return { txid, pullSats };
+  }
   const utxos = await fetchSpendable(gw.address);
   const { txid } = await sendBuilt({
     wif: gw.wif,
@@ -176,6 +224,12 @@ export async function gwPull(
 export async function gwPayout(  gw: GW, addr: string, sats: number, season: string, uid: string
 ): Promise<string> {
   if (gw.kind === "yours") return payoutWinner(gw.ctx, addr, sats, season, uid);
+  if (gw.kind === "os") {
+    const { txid } = await osBsv().spend(
+      [{ to: addr, sats }],
+      ["POCKETPETS-PAYOUT", season, uid]);
+    return txid;
+  }
   const utxos = await fetchSpendable(gw.address);
   const { txid } = await sendBuilt({
     wif: gw.wif,
@@ -203,6 +257,13 @@ export async function gwMarketBuy(
     if (res.error || !res.txid) throw new Error(res.error || "Payment failed");
     return { txid: res.txid, feeSats };
   }
+  if (gw.kind === "os") {
+    // NOTE: direct (non-atomic) buys move no NFT — same semantics as embedded.
+    const { txid } = await osBsv().spend(
+      [{ to: seller, sats: priceSats }, { to: feeAddr, sats: feeSats }],
+      ["POCKETPETS-BUY", origin]);
+    return { txid, feeSats };
+  }
   const utxos = await fetchSpendable(gw.address);
   const { txid } = await sendBuilt({
     wif: gw.wif,
@@ -219,8 +280,17 @@ export async function gwMarketBuy(
 
 /** Atomic list: pre-sign the swap. NFT never leaves the seller's wallet. */
 export async function gwAtomicList(
-  gw: EmbW, pet: Pet, priceSats: number
+  gw: EmbW | OsW, pet: Pet, priceSats: number
 ): Promise<SwapOffer & { seller: string }> {
+  if (gw.kind === "os") {
+    if (!pet.nft) throw new Error("Pet is not minted");
+    const [originTx] = pet.nft.origin.split(".");
+    // liveness preflight (read-only); the daemon re-resolves chain truth at sign time
+    const { unconfirmed } = await resolveNftUtxo(gw.address, originTx, pet.nft.vout ?? 0);
+    const offer = await osBsv().signSwapOffer(originTx, pet.nft.vout ?? 0, priceSats);
+    if (unconfirmed) offer.unconfirmedParent = true;
+    return { ...offer, seller: gw.address };
+  }
   if (!pet.nft?.scriptHex) throw new Error("No local inscription data");
   const [originTx] = pet.nft.origin.split(".");
   const { utxo: nftUtxo, unconfirmed } = await resolveNftUtxo(gw.address, originTx, pet.nft.vout ?? 0);
@@ -238,10 +308,22 @@ export async function gwAtomicList(
 
 /** Atomic buy: complete the swap, broadcast, return txid (settlement included). */
 export async function gwAtomicBuy(
-  gw: EmbW, listing: { origin: string; price_sats: number; seller_unlock: string; pay_script: string },
+  gw: EmbW | OsW, listing: { origin: string; price_sats: number; seller_unlock: string; pay_script: string },
   feeAddr: string
 ): Promise<{ txid: string; feeSats: number; nftVout: number; nftScriptHex: string }> {
   const feeSats = Math.max(1, Math.floor((listing.price_sats * MARKET_FEE_BPS) / 10000));
+  if (gw.kind === "os") {
+    const [originTx] = listing.origin.split(".");
+    const r = await osBsv().completeSwap({
+      input: { txid: originTx, vout: 0, scriptHex: "", sequence: 0xffffffff },
+      unlockHex: listing.seller_unlock,
+      payScriptHex: listing.pay_script,
+      priceSats: listing.price_sats,
+      version: 2,
+      lockTime: 0,
+    }, { to: feeAddr, sats: feeSats }, ["POCKETPETS-BUY", listing.origin]);
+    return { txid: r.txid, feeSats, nftVout: 1, nftScriptHex: p2pkhScript(gw.address).toHex() };
+  }
   const utxos = await fetchSpendable(gw.address);
   const [originTx] = listing.origin.split(".");
   const done = await completeSwap({
@@ -274,7 +356,13 @@ export async function gwAtomicBuy(
 }
 
 /** Transfer an embedded-held NFT. Returns new location (plain P2PKH output). */
-export async function gwTransferNft(gw: EmbW, pet: Pet, toAddress: string): Promise<{ txid: string; vout: number; scriptHex: string }> {
+export async function gwTransferNft(gw: EmbW | OsW, pet: Pet, toAddress: string): Promise<{ txid: string; vout: number; scriptHex: string }> {
+  if (gw.kind === "os") {
+    if (!pet.nft) throw new Error("Pet is not minted");
+    const [curTx] = pet.nft.txid.split(".");
+    const r = await osBsv().transferNft(curTx, pet.nft.vout ?? 0, toAddress, ["POCKETPETS-TRANSFER", pet.uid]);
+    return { txid: r.txid, vout: 0, scriptHex: p2pkhScript(toAddress).toHex() };
+  }
   if (!pet.nft?.scriptHex) throw new Error("No local inscription data (Yours mints transfer in-wallet)");
   const [curTx] = pet.nft.txid.split(".");
   const curVout = pet.nft.vout ?? 0;
