@@ -25,12 +25,11 @@ export const ENTRY_SATS = 100; // legacy fallback for old entries
 export const POT_FEE_BPS = 200; // 2% operator cut of pot on payout
 export const MARKET_FEE_BPS = 200; // 2% operator cut of NFT sale price
 
-// --- operator revenue: USD-denominated, converted to sats at pay time ---
-export const MINT_FEE_USD = 0.5;
-export const ACTION_FEE_USD = 0.02;
-export const ENTRY_USD = 0.1;
-export const PULL_USD = 0.1;
-export const FOOD_REFILL_USD = 0.05;
+export const MINT_FEE_SATS = 1;
+export const ACTION_FEE_SATS = 1;
+export const CUP_ENTRY_SATS = 1;
+export const PULL_SATS = 1;
+export const FOOD_REFILL_SATS = 1;
 export const DEFAULT_FEE_ADDRESS = "1DHBH964yuvJnneuUe7EKFpVyJK1Vkz8Y4";
 export const FALLBACK_BSV_USD = 25;
 

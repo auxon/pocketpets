@@ -8,8 +8,8 @@ import {
 } from "./pets";
 import { buzz, useSave } from "./store";
 import {
-  ACTION_FEE_USD, ENTRY_SATS, ENTRY_USD, FALLBACK_BSV_USD, FOOD_REFILL_USD, MARKET_FEE_BPS, POT_FEE_BPS, PULL_USD,
-  appendLedger, getBsvUsd, onesatUrl, seasonKey, usdToSats, verifyLedger, wocTxUrl,
+  ACTION_FEE_SATS, CUP_ENTRY_SATS, ENTRY_SATS, FOOD_REFILL_SATS, MARKET_FEE_BPS, MINT_FEE_SATS, POT_FEE_BPS, PULL_SATS,
+  appendLedger, onesatUrl, seasonKey, verifyLedger, wocTxUrl,
 } from "./chain";
 import { drawPetCard, useBsv } from "./bsv";
 import { arcStatus, p2pkhScript } from "./embedded.ts";
@@ -144,9 +144,9 @@ export default function App() {
     }
     setRefilling(true);
     try {
-      say(`Paying $${FOOD_REFILL_USD.toFixed(2)} for a full bowl…`);
+      say(`Paying ${FOOD_REFILL_SATS} sat for a full bowl…`);
       const { txid, refillSats } = await gwFoodRefill(gw, save.feeAddress);
-      const ledger = await appendLedger(save.ledger, "food_refill", active?.uid ?? "-", `$${FOOD_REFILL_USD} ${txid.slice(0, 12)} (${refillSats}sats)`);
+      const ledger = await appendLedger(save.ledger, "food_refill", active?.uid ?? "-", `${refillSats} sats refill ${txid.slice(0, 12)}`);
       setSave((s) => ({ ...s, ledger, food: { ...ensureFoodDay(s.food), left: MAX_FOOD } }));
       say(`🍖 Bowl refilled! ${short(txid)}`);
       watchTx(txid, "other", active?.uid);
@@ -212,7 +212,7 @@ export default function App() {
     if (!gw) return;
     setMintingUid(pet.uid);
     try {
-      say(gw.kind === "embedded" ? "Minting (fee + inscription, one signature)…" : "Paying $0.50 mint fee…");
+      say(gw.kind === "embedded" ? "Minting (fee + inscription, one signature)…" : `Paying ${MINT_FEE_SATS} sat mint fee…`);
       const r = await gwMint(gw, pet, save.feeAddress);
       patchPet(pet.uid, (p) => ({
         ...p,
@@ -273,7 +273,7 @@ export default function App() {
       const rarity = rollRarity(pity);
       const sp = rollSpecies(rarity);
       const pet = hatch(sp, pity);
-      say(`Paying $${PULL_USD.toFixed(2)} per pull…`);
+      say(`Paying ${PULL_SATS} sat per pull…`);
       const { txid, pullSats } = await gwPull(gw, save.feeAddress, pet.uid);
       const hitLegend = rarity === "legendary";
       const ledger = await appendLedger(save.ledger, "pull", pet.uid, `${sp.id}/${rarity} pity=${pity} fee ${txid.slice(0, 12)} (${pullSats}sats)`);
@@ -360,7 +360,7 @@ export default function App() {
       <header className="topbar">
         <div className="brand">🐾 Pocket Pets</div>
         <div className="topright">
-          <div className="wallet">🎰 ${PULL_USD.toFixed(2)}/pull <span>· 🏆 {potSats.toLocaleString()}</span></div>
+          <div className="wallet">🎰 {PULL_SATS} sat/pull <span>· 🏆 {potSats.toLocaleString()}</span></div>
           {tw.session ? (
             <button className="acct" onClick={() => setTab("bsv")} title={`@${tw.session.handle}`}>
               {tw.session.avatar ? <img src={tw.session.avatar} alt="" /> : <span>🐾</span>}
@@ -391,16 +391,16 @@ export default function App() {
         {tab === "gacha" && (
           <section className="card">
             <h2>✨ Gacha Pulls</h2>
-            <p className="muted">pity {save.pity} (boosts legendary) · every pull pays ${PULL_USD.toFixed(2)} on-chain</p>
+            <p className="muted">pity {save.pity} (boosts legendary) · every pull pays {PULL_SATS} sat on-chain</p>
             <div className="rates">
               {(["common", "rare", "epic", "legendary"] as const).map((r) => (
                 <span key={r} className="pill" style={{ borderColor: RARITY_COLOR[r] }}>{r}</span>
               ))}
             </div>
             <motion.button className="primary big" whileTap={{ scale: 0.96 }} onClick={() => void doPull()} disabled={busy === "pull"}>
-              {busy === "pull" ? "Paying…" : `🎲 Pull — $${PULL_USD.toFixed(2)}`}
+              {busy === "pull" ? "Paying…" : `🎲 Pull — ${PULL_SATS} sat`}
             </motion.button>
-            <p className="muted">First pet is free. Paid pulls are hash-logged with their payment txid. Mint winners as 1Sat Ordinals ($0.50) from Home.</p>
+            <p className="muted">First pet is free. Paid pulls are hash-logged with their payment txid. Mint winners as 1Sat Ordinals ({MINT_FEE_SATS} sat fee) from Home.</p>
           </section>
         )}
         {tab === "battle" && (
@@ -518,7 +518,7 @@ function HomeTab({ pet, minting, foodLeft, foodMax, refilling, onRefill, onFeed,
       ) : (
         <p className="muted">👑 max rarity reached</p>
       )}
-      {!pet.nft && <button className="mintbtn" onClick={onMint} disabled={minting}>{minting ? "Minting…" : "🎴 Mint as NFT — $0.50 fee"}</button>}
+      {!pet.nft && <button className="mintbtn" onClick={onMint} disabled={minting}>{minting ? "Minting…" : `🎴 Mint as NFT — ${MINT_FEE_SATS} sat fee`}</button>}
       <div className="stats">
         <div><label>HP {pet.hp}/{maxHp(pet)}</label><Bar value={(pet.hp / maxHp(pet)) * 100} color="#4ade80" /></div>
         <div><label>😊 {pet.happy}</label><Bar value={pet.happy} color="#f472b6" /></div>
@@ -531,7 +531,7 @@ function HomeTab({ pet, minting, foodLeft, foodMax, refilling, onRefill, onFeed,
         <Bar value={(foodLeft / foodMax) * 100} color={foodLeft <= 0 ? "#ef4444" : "#fb923c"} />
         {foodLeft < foodMax && (
           <button className="refillbtn" onClick={onRefill} disabled={refilling}>
-            {refilling ? "Paying…" : `🍖 Refill bowl — $${FOOD_REFILL_USD.toFixed(2)}`}
+            {refilling ? "Paying…" : `🍖 Refill bowl — ${FOOD_REFILL_SATS} sat`}
           </button>
         )}
       </div>
@@ -555,7 +555,7 @@ function Reveal({ pet, onClose, subtitle }: { pet: Pet; onClose(): void; subtitl
         <h3>{pet.nickname}!</h3>
         {subtitle && <p className="evosub">{subtitle}</p>}
         <span className="pill" style={{ borderColor: RARITY_COLOR[sp.rarity] }}>{sp.rarity}</span>
-        <p className="muted">Mint it as an NFT ($0.50) from Home 🎴</p>
+        <p className="muted">Mint it as an NFT ({MINT_FEE_SATS} sat) from Home 🎴</p>
         <button className="primary" onClick={onClose}>Keep!</button>
       </motion.div>
     </motion.div>
@@ -1364,15 +1364,10 @@ function BsvTab({ busy, setBusy, say, verifyMsg, setVerifyMsg, tw, onLogin, onLo
   const [save, setSave] = useSave();
   const bsv = useBsv();
   const season = seasonKey();
-  const [rate, setRate] = useState<{ price: number; live: boolean } | null>(null);
   const [winnerUid, setWinnerUid] = useState(save.activeUid ?? save.pets[0]?.uid ?? "");
   const [payAddr, setPayAddr] = useState(save.payoutAddress);
   const [manualTx, setManualTx] = useState("");
   const [amount, setAmount] = useState<number | null>(null);
-
-  useEffect(() => {
-    getBsvUsd().then(setRate).catch(() => setRate({ price: FALLBACK_BSV_USD, live: false }));
-  }, []);
 
   // Reconcile: clear NFT records whose mint tx died on-chain (e.g. lost a
   // double-spend race) so the pet can be re-minted. Funds never moved.
@@ -1403,10 +1398,6 @@ function BsvTab({ busy, setBusy, say, verifyMsg, setVerifyMsg, tw, onLogin, onLo
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const feeSats = rate ? usdToSats(ACTION_FEE_USD, rate.price) : null;
-  const entrySats = rate ? usdToSats(ENTRY_USD, rate.price) : null;
-  const rateNote = rate ? `@ $${rate.price}${rate.live ? "" : " (cached)"}` : "loading rate…";
 
   const seasonEntries = save.entries.filter((e) => e.season === season);
   const potSats = potTotal(seasonEntries);
@@ -1471,8 +1462,8 @@ function BsvTab({ busy, setBusy, say, verifyMsg, setVerifyMsg, tw, onLogin, onLo
     if (!w) return say("Connect Yours or unlock the built-in wallet below");
     setBusy("enter");
     try {
-      const { txid, entrySats: es } = await gwEnter(w, save.potAddress, save.feeAddress, active.uid, tip);
-      const ledger = await appendLedger(save.ledger, "pot_entry", active.uid, `@${tw.handle} $${ENTRY_USD}+fee ${txid.slice(0, 12)}`);
+      const { txid, entrySats: es, feeSats: f } = await gwEnter(w, save.potAddress, save.feeAddress, active.uid, tip);
+      const ledger = await appendLedger(save.ledger, "pot_entry", active.uid, `@${tw.handle} ${es} sats + ${f} sats fee ${txid.slice(0, 12)}`);
       setSave((s) => ({
         ...s,
         ledger,
@@ -1536,7 +1527,7 @@ function BsvTab({ busy, setBusy, say, verifyMsg, setVerifyMsg, tw, onLogin, onLo
       <section className="card">
         <h2>👛 Wallet</h2>
         <WalletCard say={say} />
-        <p className="muted">Fees: $0.50 mint · $0.10 pull · $0.05 refill · ${ACTION_FEE_USD} per on-chain action · pot fee {POT_FEE_BPS / 100}% {rateNote}</p>
+        <p className="muted">Fixed fees: {MINT_FEE_SATS} sat mint (+1 sat inscription) · {PULL_SATS} sat pull · {FOOD_REFILL_SATS} sat refill · {ACTION_FEE_SATS} sat action fee for cup, anchor and paid PvP · pot fee {POT_FEE_BPS / 100}%. Network fees are additional. Paid PvP dollar stakes and market prices + {MARKET_FEE_BPS / 100}% fees are unchanged.</p>
         <label className="fld"><span>Your BSV payout address (winnings go here)</span>
           <input value={payAddr} placeholder="1..." onChange={(e) => { setPayAddr(e.target.value); setSave((s) => ({ ...s, payoutAddress: e.target.value })); }} />
         </label>
@@ -1552,8 +1543,8 @@ function BsvTab({ busy, setBusy, say, verifyMsg, setVerifyMsg, tw, onLogin, onLo
         <h2>⛓️ Action ledger</h2>
         <p className="muted">{save.ledger.length} actions · tip <code>{short(tip, 8)}</code> · {unanchored} unanchored</p>
         <div className="row2">
-          <button disabled={busy === "anchor" || !save.ledger.length || feeSats == null} onClick={() => void onAnchor()}>
-            {busy === "anchor" ? "Anchoring…" : `Anchor tip (1 sat + $${ACTION_FEE_USD} fee)`}
+          <button disabled={busy === "anchor" || !save.ledger.length} onClick={() => void onAnchor()}>
+            {busy === "anchor" ? "Anchoring…" : `Anchor tip (1 sat tip + ${ACTION_FEE_SATS} sat fee)`}
           </button>
           <button onClick={() => void verifyLedger(save.ledger).then((r) => setVerifyMsg(r.ok ? `✅ chain valid (${save.ledger.length})` : `❌ broken at seq ${r.badSeq}`))}>
             Verify chain
@@ -1571,10 +1562,10 @@ function BsvTab({ busy, setBusy, say, verifyMsg, setVerifyMsg, tw, onLogin, onLo
       <section className="card">
         <h2>🏆 Battle Cup · {season}</h2>
         <p className="muted">Pot: <b>{potSats.toLocaleString()} sats</b> ({seasonEntries.length} entries) · fee {POT_FEE_BPS / 100}% · <a href={wocTxUrl(save.potAddress)} target="_blank" rel="noreferrer">pot address</a></p>
-        <button className="primary big" disabled={busy === "enter" || entrySats == null} onClick={() => void onEnter()}>
-          {busy === "enter" ? "Paying…" : entrySats == null ? "Loading rate…" : `🎟️ Enter cup — $${ENTRY_USD} + $${ACTION_FEE_USD} fee`}
+        <button className="primary big" disabled={busy === "enter"} onClick={() => void onEnter()}>
+          {busy === "enter" ? "Paying…" : `🎟️ Enter cup — ${CUP_ENTRY_SATS} sat + ${ACTION_FEE_SATS} sat fee`}
         </button>
-        <p className="muted">Pays {entrySats?.toLocaleString() ?? "?"} sats to pot + {feeSats?.toLocaleString() ?? "?"} sats fee, one signature. {tw ? `Entering as @${tw.handle}.` : "Requires Twetch sign-in."}</p>
+        <p className="muted">Pays {CUP_ENTRY_SATS} sat to pot + {ACTION_FEE_SATS} sat fee, one signature. {tw ? `Entering as @${tw.handle}.` : "Requires Twetch sign-in."}</p>
         {seasonEntries.slice(-5).reverse().map((e) => (
           <p key={e.txid} className="muted">🎟️ {e.nickname}{e.handle ? ` (@${e.handle})` : ""} · <a href={wocTxUrl(e.txid)} target="_blank" rel="noreferrer">{short(e.txid)}</a></p>
         ))}
@@ -1612,7 +1603,7 @@ function BsvTab({ busy, setBusy, say, verifyMsg, setVerifyMsg, tw, onLogin, onLo
       <section className="card">
         <h2>🎴 Your NFTs</h2>
         {save.pets.filter((p) => p.nft).length === 0
-          ? <p className="muted">None yet — mint from Home or Pets ($0.50 fee). Each mint is a real 1Sat Ordinal you own.</p>
+          ? <p className="muted">None yet — mint from Home or Pets ({MINT_FEE_SATS} sat fee). Each mint is a real 1Sat Ordinal you own.</p>
           : save.pets.filter((p) => p.nft).map((p) => (
             <div key={p.uid}>
               <p className="muted">🎴 {p.nickname} · <a href={onesatUrl(p.nft!.origin)} target="_blank" rel="noreferrer">1sat</a> · <a href={wocTxUrl(p.nft!.txid)} target="_blank" rel="noreferrer">{short(p.nft!.txid)}</a></p>

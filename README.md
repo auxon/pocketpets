@@ -21,17 +21,25 @@ OS daemon's `window.bsv` intents under the app origin policy. No keys touch
 the page; the built-in/Yours backends stay as fallbacks outside the runner.
 Needs one static file to install: `https://entangleit.com/manifest.json`.
 
-## Economy (USD-denominated, settled in sats at the live rate)
+## Economy (near-free demo pricing, fixed sats)
+
+Real mainnet payments: game fees below are fixed satoshi amounts, not USD
+conversions. Network fees are additional and unchanged, including inscription
+transaction fees.
 
 | Action | Price |
 | --- | --- |
-| Gacha pull | $0.10 |
-| NFT mint | $0.50 |
-| Food refill | $0.05 |
-| Cup entry | $0.10 + $0.02 |
-| Ledger anchor | $0.02 |
-| PvP stakes | Free / $0.05 / $0.10 / $0.25 (winner takes 90%, house 10%) |
-| NFT market | 2% on sales |
+| Gacha pull | 1 sat |
+| NFT mint | 1 sat fee + 1 sat inscription |
+| Food refill | 1 sat |
+| Cup entry | 1 sat to pot + 1 sat action fee (2% pot fee on payout) |
+| Ledger anchor | 1 sat tip to pot + 1 sat action fee |
+| PvP stakes | Free / $0.05 / $0.10 / $0.25, converted to sats at the exchange rate; paid stakes add a 1 sat action fee (winner takes 90%, house 10%) |
+| NFT market | Seller-set prices unchanged + 2% fee (minimum 1 sat) |
+
+Paid PvP dollar tiers are unchanged to match the separate backend's allowlist;
+stakes are paid before a challenge is posted. Historical cup entries without a
+recorded amount retain the legacy 100 sat fallback.
 
 ## Pets
 

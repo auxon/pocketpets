@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import {
   MAX_FOOD, ensureFoodDay, freshFood, msUntilMidnight, takeFood, todayKey,
 } from "../src/pets.ts";
-import { FOOD_REFILL_USD, usdToSats } from "../src/chain.ts";
+import {
+  ACTION_FEE_SATS, CUP_ENTRY_SATS, ENTRY_SATS, FOOD_REFILL_SATS,
+  MARKET_FEE_BPS, MINT_FEE_SATS, POT_FEE_BPS, PULL_SATS, usdToSats,
+} from "../src/chain.ts";
 
 test("fresh bowl is full", () => {
   assert.equal(MAX_FOOD, 20);
@@ -39,8 +42,15 @@ test("midnight countdown is sane", () => {
   assert.equal(typeof todayKey(), "string");
 });
 
-test("refill price is $0.05 in sats at rate", () => {
-  assert.equal(FOOD_REFILL_USD, 0.05);
-  assert.equal(usdToSats(FOOD_REFILL_USD, 25), 200000);
-  assert.ok(usdToSats(FOOD_REFILL_USD, 250) >= 1);
+test("refill price is a fixed 1 sat", () => {
+  assert.equal(FOOD_REFILL_SATS, 1);
+});
+
+test("demo fees are fixed sats and preserve historical and percentage pricing", () => {
+  assert.deepEqual([MINT_FEE_SATS, ACTION_FEE_SATS, CUP_ENTRY_SATS, PULL_SATS, FOOD_REFILL_SATS], [1, 1, 1, 1, 1]);
+  assert.equal(CUP_ENTRY_SATS + ACTION_FEE_SATS, 2);
+  assert.equal(ENTRY_SATS, 100);
+  assert.equal(MARKET_FEE_BPS, 200);
+  assert.equal(POT_FEE_BPS, 200);
+  assert.deepEqual([0.05, 0.1, 0.25].map((usd) => usdToSats(usd, 25)), [200000, 400000, 1000000]);
 });

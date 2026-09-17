@@ -2,8 +2,8 @@ import { useMemo } from "react";
 import { createContext, inscribe, sendBsv, type OneSatContext } from "@1sat/actions";
 import { OneSatServices } from "@1sat/client";
 import { useWallet } from "@1sat/react";
-import type { Pet } from "./pets";
-import { speciesOf, stats } from "./pets";
+import type { Pet } from "./pets.ts";
+import { speciesOf, stats } from "./pets.ts";
 
 const services = new OneSatServices("main");
 
@@ -140,7 +140,6 @@ export async function collectFee(
 
 /**
  * Anchor the ledger tip hash on-chain.
- * Single wallet signature, two outputs: 1 sat to pot (+memo) + $0.02 fee.
  */
 export async function anchorTip(
   ctx: OneSatContext,
@@ -161,7 +160,6 @@ export async function anchorTip(
 
 /**
  * Pay the cup entry fee to the pot with an on-chain entry memo.
- * Single wallet signature: stake to pot + $0.02 fee.
  */
 export async function enterCup(
   ctx: OneSatContext,

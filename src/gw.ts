@@ -1,12 +1,12 @@
 // Unified game wallet: Yours (1Sat) when connected, else the built-in
 // self-custody wallet. Callers never touch keys or payment plumbing.
 import type { OneSatContext } from "@1sat/actions";
-import type { Pet } from "./pets";
-import { speciesOf } from "./pets";
+import type { Pet } from "./pets.ts";
+import { speciesOf } from "./pets.ts";
 import {
-  ACTION_FEE_USD, ENTRY_USD, FOOD_REFILL_USD, MARKET_FEE_BPS, MINT_FEE_USD, PULL_USD, getBsvUsd, usdToSats,
-} from "./chain";
-import { anchorTip, collectFee, enterCup, mintPetNft, payMany, payoutWinner, petArtworkJpeg } from "./bsv";
+  ACTION_FEE_SATS, CUP_ENTRY_SATS, FOOD_REFILL_SATS, MARKET_FEE_BPS, MINT_FEE_SATS, PULL_SATS,
+} from "./chain.ts";
+import { anchorTip, collectFee, enterCup, mintPetNft, payMany, payoutWinner, petArtworkJpeg } from "./bsv.ts";
 import { fetchSpendable, inscriptionScript, p2pkhScript, resolveNftUtxo, sendBuilt } from "./embedded.ts";
 import { broadcast } from "./embedded.ts";
 import { osBsv } from "./oswallet.ts";
@@ -44,9 +44,7 @@ const bytesHashHex = async (bytes: Uint8Array): Promise<string> => {
 /** Mint pet as NFT. Embedded does fee + inscription in ONE tx/signature. */
 export async function gwMint(gw: GW, pet: Pet, feeAddress: string): Promise<MintOut> {
   if (gw.kind === "yours") {
-    const { price } = await getBsvUsd();
-    const feeSats = usdToSats(MINT_FEE_USD, price);
-    const feeTxid = await collectFee(gw.ctx, feeAddress, feeSats, "mint");
+    const feeTxid = await collectFee(gw.ctx, feeAddress, MINT_FEE_SATS, "mint");
     const r = await mintPetNft(gw.ctx, pet);
     return { ...r, feeTxid };
   }
@@ -54,11 +52,9 @@ export async function gwMint(gw: GW, pet: Pet, feeAddress: string): Promise<Mint
     const art = petArtworkJpeg(pet);
     const contentHash = await bytesHashHex(art);
     const dataHex = [...art].map((b) => b.toString(16).padStart(2, "0")).join("");
-    const { price } = await getBsvUsd();
-    const feeSats = usdToSats(MINT_FEE_USD, price);
     const sp = speciesOf(pet);
     const r = await osBsv().inscribe(dataHex, "image/jpeg", undefined,
-      { to: feeAddress, sats: feeSats },
+      { to: feeAddress, sats: MINT_FEE_SATS },
       ["POCKETPETS-MINT", pet.uid, sp.id, contentHash.slice(0, 16)]);
     const script = inscriptionScript(gw.address, "image/jpeg", art);
     return { txid: r.txid, origin: `${r.txid}.0`, contentHash, feeTxid: r.txid, scriptHex: script.toHex() };
@@ -66,14 +62,12 @@ export async function gwMint(gw: GW, pet: Pet, feeAddress: string): Promise<Mint
   const art = petArtworkJpeg(pet);
   const contentHash = await bytesHashHex(art);
   const script = inscriptionScript(gw.address, "image/jpeg", art);
-  const { price } = await getBsvUsd();
-  const feeSats = usdToSats(MINT_FEE_USD, price);
   const utxos = await fetchSpendable(gw.address);
   const sp = speciesOf(pet);
   const { txid } = await sendBuilt({
     wif: gw.wif,
     utxos,
-    payments: [{ address: feeAddress, sats: feeSats }],
+    payments: [{ address: feeAddress, sats: MINT_FEE_SATS }],
     opReturn: ["POCKETPETS-MINT", pet.uid, sp.id, contentHash.slice(0, 16)],
     inscription: { scriptHex: script.toHex() },
     changeAddress: gw.address,
@@ -82,8 +76,7 @@ export async function gwMint(gw: GW, pet: Pet, feeAddress: string): Promise<Mint
 }
 
 export async function gwAnchor(gw: GW, pot: string, feeAddr: string, tip: string): Promise<{ txid: string; feeSats: number }> {
-  const { price } = await getBsvUsd();
-  const feeSats = usdToSats(ACTION_FEE_USD, price);
+  const feeSats = ACTION_FEE_SATS;
   if (gw.kind === "yours") return { txid: await anchorTip(gw.ctx, pot, feeAddr, feeSats, tip), feeSats };
   if (gw.kind === "os") {
     const { txid } = await osBsv().spend(
@@ -108,9 +101,8 @@ export async function gwAnchor(gw: GW, pot: string, feeAddr: string, tip: string
 export async function gwEnter(
   gw: GW, pot: string, feeAddr: string, petUid: string, tip: string
 ): Promise<{ txid: string; entrySats: number; feeSats: number }> {
-  const { price } = await getBsvUsd();
-  const entrySats = usdToSats(ENTRY_USD, price);
-  const feeSats = usdToSats(ACTION_FEE_USD, price);
+  const entrySats = CUP_ENTRY_SATS;
+  const feeSats = ACTION_FEE_SATS;
   if (gw.kind === "yours") {
     return { txid: await enterCup(gw.ctx, pot, feeAddr, entrySats, feeSats, petUid, tip), entrySats, feeSats };
   }
@@ -134,12 +126,10 @@ export async function gwEnter(
   return { txid, entrySats, feeSats };
 }
 
-/** Food refill: $0.05 operator fee on-chain, bowl topped to full. */
 export async function gwFoodRefill(
   gw: GW, feeAddress: string
 ): Promise<{ txid: string; refillSats: number }> {
-  const { price } = await getBsvUsd();
-  const refillSats = usdToSats(FOOD_REFILL_USD, price);
+  const refillSats = FOOD_REFILL_SATS;
   if (gw.kind === "yours") {
     const feeTxid = await collectFee(gw.ctx, feeAddress, refillSats, "food");
     return { txid: feeTxid, refillSats };
@@ -161,12 +151,10 @@ export async function gwFoodRefill(
   return { txid, refillSats };
 }
 
-/** Stake payment to the pot for a PvP fight (stake + $0.02 action fee, one signature). */
 export async function gwStake(
   gw: GW, potAddress: string, feeAddress: string, amountSats: number, matchLabel: string
 ): Promise<{ txid: string; feeSats: number }> {
-  const { price } = await getBsvUsd();
-  const feeSats = usdToSats(ACTION_FEE_USD, price);
+  const feeSats = ACTION_FEE_SATS;
   if (gw.kind === "yours") {
     const txid = await payMany(gw.ctx, [
       { address: potAddress, satoshis: amountSats, data: ["POCKETPETS-STAKE", matchLabel] },
@@ -194,12 +182,10 @@ export async function gwStake(
   return { txid, feeSats };
 }
 
-/** Gacha pull: $0.10 operator fee on-chain, pet uid in the memo. */
 export async function gwPull(
   gw: GW, feeAddress: string, petUid: string
 ): Promise<{ txid: string; pullSats: number }> {
-  const { price } = await getBsvUsd();
-  const pullSats = usdToSats(PULL_USD, price);
+  const pullSats = PULL_SATS;
   if (gw.kind === "yours") {
     const feeTxid = await collectFee(gw.ctx, feeAddress, pullSats, "pull");
     return { txid: feeTxid, pullSats };
