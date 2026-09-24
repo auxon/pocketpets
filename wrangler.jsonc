@@ -15,6 +15,8 @@
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
-    "not_found_handling": "single-page-application"
+    // The worker owns the SPA fallback so missing assets 404 honestly
+    // (a stale chunk must fail loudly, not receive text/html with a 200).
+    "not_found_handling": "none"
   }
 }
