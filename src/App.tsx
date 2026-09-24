@@ -374,6 +374,12 @@ export default function App() {
       </header>
 
       <main className="main">
+        {tw.session && save.pets.length === 0 && (
+          <p className="muted">
+            Coming from the old <code>entangleit.com/pocketpets</code>?{" "}
+            <a href="https://entangleit.com/pocketpets/migrate">Move your pets &amp; wallet →</a>
+          </p>
+        )}
         {tab === "home" && active && (
           <HomeTab
             pet={active}

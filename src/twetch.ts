@@ -6,6 +6,25 @@ import { routePath } from "./routes.ts";
 const ISSUER = "https://id.entangleit.com";
 const CLIENT_ID = "pocketpets";
 const SESSION_KEY = "pocketpets.twetch.v1";
+// The bsvOS runner hands the window.bsv bridge in the URL fragment. An OIDC
+// round trip returns to a bare redirect_uri, so stash the fragment first and
+// restore it (with one reload) when we come back — otherwise signing in
+// inside the runner silently loses the OS wallet.
+const BRIDGE_KEY = "pocketpets.bridge.fragment";
+
+export function restoreBridgeFragment(): boolean {
+  if (typeof window === "undefined") return false;
+  if (window.location.hash.includes("bsv-port")) {
+    sessionStorage.removeItem(BRIDGE_KEY);
+    return false;
+  }
+  const stash = sessionStorage.getItem(BRIDGE_KEY);
+  if (!stash) return false;
+  sessionStorage.removeItem(BRIDGE_KEY);
+  window.location.hash = stash;
+  window.location.reload();
+  return true;
+}
 
 export interface TwetchSession {
   sub: string;
@@ -34,6 +53,9 @@ export function redirectUri(): string {
 }
 
 export function startLogin(): void {
+  if (window.location.hash.includes("bsv-port")) {
+    sessionStorage.setItem(BRIDGE_KEY, window.location.hash);
+  }
   const verifier = b64url(randomBytes(64));
   const state = b64url(randomBytes(16));
   sessionStorage.setItem("pocketpets.pkce.v", verifier);
@@ -111,6 +133,8 @@ export async function finishLogin(): Promise<TwetchSession | null> {
   } catch {
     /* ignore */
   }
+  // Back from the IdP: if this window had the runner bridge, put it back.
+  restoreBridgeFragment();
   return session;
 }
 

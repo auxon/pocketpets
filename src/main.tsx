@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { WalletProvider } from "@1sat/react";
 import App from "./App";
+import { restoreBridgeFragment } from "./twetch";
 import "./styles.css";
 
 // A deploy replaces hashed chunks; a long-lived tab that lazily imports an
@@ -17,6 +18,11 @@ window.addEventListener("vite:preloadError", (event) => {
     event.preventDefault();
   }
 });
+
+// OIDC callbacks carry ?code= — finishLogin restores the bridge itself.
+if (!new URLSearchParams(window.location.search).has("code")) {
+  restoreBridgeFragment();
+}
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
