@@ -1,0 +1,22 @@
+{
+  "name": "Pocket Pets",
+  "short_name": "Pocket Pets",
+  "start_url": "/",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }],
+  "metanet": {
+    "schemaVersion": "1",
+    "intents": [
+      { "action": "app-inscribe", "label": "PETS-MINT", "description": "mint a pet as a 1Sat Ordinal NFT" },
+      { "action": "app-spend", "label": "PETS-SPEND", "description": "mint and action fees, cup entries, food, market buys" },
+      { "action": "app-swap", "label": "PETS-BUY", "description": "buy a listed pet" },
+      { "action": "app-swap-offer", "label": "PETS-LIST", "description": "list a pet for sale" }
+    ],
+    "groupPermissions": {
+      "description": "Pocket Pets: raise pocket pets, mint them as 1Sat Ordinal NFTs with OS custody, log every action on BSV, and battle for a weekly sats pot. Buys and listings settle atomically and every spend still gates on policy.",
+      "spendingAuthorization": {
+        "amount": 100000000,
+        "description": "mint fees, cup entries, and pet market purchases; each spend still gates on policy"
+      }
+    }
+  }
+}
