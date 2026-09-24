@@ -1,13 +1,20 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "pocketpets",
+  "main": "worker.mjs",
   "compatibility_date": "2026-09-01",
   "workers_dev": true,
-  "routes": [{ "pattern": "pocketpets.entangleit.com", "custom_domain": true }],
-  // Static-assets-only Worker: `npm run deploy:subdomain` builds the SPA with
-  // base `/` (the portfolio build uses `/pocketpets/`) and serves dist/ here.
+  "routes": [
+    { "pattern": "pocketpets.entangleit.com", "custom_domain": true },
+    // Legacy portfolio links: the Pages deploy no longer serves /pocketpets.
+    { "pattern": "entangleit.com/pocketpets", "zone_name": "entangleit.com" },
+    { "pattern": "entangleit.com/pocketpets/*", "zone_name": "entangleit.com" }
+  ],
+  // Static assets are the SPA built with base `/` (npm run build:subdomain);
+  // the portfolio build keeps its own /pocketpets/ base for scripts/deploy-entangleit.sh.
   "assets": {
     "directory": "./dist",
+    "binding": "ASSETS",
     "not_found_handling": "single-page-application"
   }
 }
