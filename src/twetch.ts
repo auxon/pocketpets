@@ -1,6 +1,7 @@
 // Sign in with Twetch (OIDC code + PKCE against id.entangleit.com).
 // Claims come from the userinfo endpoint (server-validated) — no JWT crypto here.
 import { useCallback, useState } from "react";
+import { routePath } from "./routes.ts";
 
 const ISSUER = "https://id.entangleit.com";
 const CLIENT_ID = "pocketpets";
@@ -29,7 +30,7 @@ const randomBytes = (n: number): Uint8Array => {
 };
 
 export function redirectUri(): string {
-  return `${window.location.origin}/pocketpets/`;
+  return `${window.location.origin}${routePath()}`;
 }
 
 export function startLogin(): void {

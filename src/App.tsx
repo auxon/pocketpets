@@ -51,7 +51,7 @@ export default function App() {
   // only exists there; otherwise buyers just see their active pet.
   const [tab, setTab] = useState<Tab>(() => {
     try {
-      if (/\/pocketpets\/listing\/[0-9a-fA-F]{64}\.0\/?$/.test(window.location.pathname)) return "market";
+      if (/\/listing\/[0-9a-fA-F]{64}\.0\/?$/.test(window.location.pathname)) return "market";
       if (window.location.hash.startsWith("#listing-")) return "market";
       if (/^#pvp-[0-9a-f]{16}$/.test(window.location.hash)) return "battle";
     } catch {
@@ -563,6 +563,7 @@ function Reveal({ pet, onClose, subtitle }: { pet: Pet; onClose(): void; subtitl
 }
 
 import { EpicBattle, type EpicFighter } from "./EpicBattle.tsx";
+import { routePath } from "./routes.ts";
 
 function fighterCard(pet: Pet, sub: string): EpicFighter {
   const sp = speciesOf(pet);
@@ -790,7 +791,7 @@ function ListingDetail({ l, mine, busy, onClose, onBuy, onSettle, onCancel, sett
   }, [pseudo]);
   const fee = Math.max(1, Math.floor((l.price_sats * MARKET_FEE_BPS) / 10000));
   const isAtomic = !!l.seller_unlock;
-  const shareUrl = `${window.location.origin}/pocketpets/listing/${l.origin}`;
+  const shareUrl = `${window.location.origin}${routePath(`listing/${l.origin}`)}`;
   const listed = new Date(l.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" });
   return (
     <motion.div className="overlay scroll" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
@@ -862,7 +863,7 @@ function MarketTab({ busy, setBusy, say, tw, onLogin }: {
   const [manual, setManual] = useState<Record<string, { escrowTxid: string; seller: string }>>({});
   const [settleTx, setSettleTx] = useState<Record<string, string>>({});
   const [detail, setDetail] = useState<string | null>(() => {
-    const m = window.location.pathname.match(/\/pocketpets\/listing\/([0-9a-fA-F]{64}\.0)\/?$/);
+    const m = window.location.pathname.match(/\/listing\/([0-9a-fA-F]{64}\.0)\/?$/);
     if (m) return m[1]!;
     return window.location.hash.startsWith("#listing-") ? window.location.hash.slice("#listing-".length) : null;
   });
@@ -870,7 +871,7 @@ function MarketTab({ busy, setBusy, say, tw, onLogin }: {
   const openDetail = (origin: string) => {
     setDetail(origin);
     try {
-      window.history.replaceState(null, "", `/pocketpets/listing/${origin}`);
+      window.history.replaceState(null, "", routePath(`listing/${origin}`));
     } catch {
       /* ignore */
     }
@@ -878,7 +879,7 @@ function MarketTab({ busy, setBusy, say, tw, onLogin }: {
   const closeDetail = () => {
     setDetail(null);
     try {
-      window.history.replaceState(null, "", `/pocketpets/`);
+      window.history.replaceState(null, "", routePath());
     } catch {
       /* ignore */
     }

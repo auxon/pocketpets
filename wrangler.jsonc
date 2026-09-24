@@ -1,0 +1,13 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "pocketpets",
+  "compatibility_date": "2026-09-01",
+  "workers_dev": true,
+  "routes": [{ "pattern": "pocketpets.entangleit.com", "custom_domain": true }],
+  // Static-assets-only Worker: `npm run deploy:subdomain` builds the SPA with
+  // base `/` (the portfolio build uses `/pocketpets/`) and serves dist/ here.
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  }
+}

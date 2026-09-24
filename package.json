@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:subdomain": "tsc -b && vite build --base=/",
+    "deploy:subdomain": "npm run build:subdomain && npx wrangler deploy"
   },
   "dependencies": {
     "@1sat/actions": "^0.0.197",

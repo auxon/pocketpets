@@ -16,6 +16,7 @@ import { embeddedSession } from "./embwallet.tsx";
 import { osSession } from "./oswallet.ts";
 import { useBsv } from "./bsv.ts";
 import type { TwetchSession } from "./twetch.ts";
+import { routePath } from "./routes.ts";
 
 export const STAKE_TIERS = [0, 0.05, 0.1, 0.25] as const;
 export type StakeTier = (typeof STAKE_TIERS)[number];
@@ -408,7 +409,7 @@ export function PvpPanel({ say, busy, setBusy, tw, onLogin, onEvolve }: {
       if (focusId === id) {
         setFocusId(null);
         try {
-          window.history.replaceState(null, "", "/pocketpets/");
+          window.history.replaceState(null, "", routePath());
         } catch {
           /* ignore */
         }
@@ -422,7 +423,7 @@ export function PvpPanel({ say, busy, setBusy, tw, onLogin, onEvolve }: {
   };
 
   const share = async (id: string) => {
-    const url = `${window.location.origin}/pocketpets/#pvp-${id}`;
+    const url = `${window.location.origin}${routePath()}#pvp-${id}`;
     const text = `⚔️ Fight my ${active?.nickname ?? "pet"} in Pocket Pets! ${url}`;
     try {
       if (navigator.share) await navigator.share({ text });
