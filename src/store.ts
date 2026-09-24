@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
+import type { Dispatch, SetStateAction } from "react";
+import { rememberLocalChange } from "./syncPolicy";
 import type { Pet } from "./pets";
 import { DEFAULT_FEE_ADDRESS, DEFAULT_POT_ADDRESS, type LedgerEntry, type PotEntry, type PotPayout } from "./chain";
 import { ensureFoodDay, freshFood, type FoodState } from "./pets";
@@ -74,16 +76,45 @@ function load(): Save {
   }
 }
 
-export function useSave() {
-  const [save, setSave] = useState<Save>(load);
-  useEffect(() => {
-    try {
-      localStorage.setItem(KEY, JSON.stringify(save));
-    } catch {
-      /* ignore */
-    }
-  }, [save]);
-  return [save, setSave] as const;
+// One shared save for the whole app (tabs used to keep private copies that
+// could clobber each other — and sync). Mutations persist synchronously and
+// notify every subscriber, so any component can write safely.
+let current: Save = load();
+let changedAtValue = 0;
+const listeners = new Set<() => void>();
+
+function emit(): void {
+  for (const listener of listeners) listener();
+}
+
+export function getSave(): Save {
+  return current;
+}
+
+export function subscribeSave(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+export function setSaveValue(updater: SetStateAction<Save>): void {
+  const next = typeof updater === "function" ? (updater as (s: Save) => Save)(current) : updater;
+  if (next === current) return;
+  current = next;
+  try {
+    localStorage.setItem(KEY, JSON.stringify(current));
+  } catch {
+    /* ignore */
+  }
+  changedAtValue = Date.now();
+  rememberLocalChange(changedAtValue);
+  emit();
+}
+
+/** [save, setSave, changedAt] — changedAt advances on every local mutation. */
+export function useSave(): readonly [Save, Dispatch<SetStateAction<Save>>, number] {
+  const save = useSyncExternalStore(subscribeSave, getSave);
+  const changedAt = useSyncExternalStore(subscribeSave, () => changedAtValue);
+  return [save, setSaveValue, changedAt] as const;
 }
 
 export const buzz = (ms = 15) => {

@@ -18,6 +18,9 @@ import { ensureOsAddress, isOsWallet, osBsv, osSession } from "./oswallet";
 import { gwAnchor, gwAtomicBuy, gwAtomicList, gwEnter, gwFoodRefill, gwMarketBuy, gwMint, gwPayout, gwPull, gwTransferNft, type GW } from "./gw";
 import { cancelListing, fetchListing, fetchRecentSales, fetchTxDetails, listMarket, markBought, markSettled, postListing, type MarketListing } from "./market";
 import { startLogin, useTwetch, type TwetchSession } from "./twetch";
+import { useSync, type SyncStatus } from "./sync";
+import type { Save } from "./store";
+import type { Dispatch, SetStateAction } from "react";
 import { PvpPanel } from "./pvp.tsx";
 
 type Tab = "home" | "gacha" | "battle" | "pets" | "market" | "bsv";
@@ -46,7 +49,7 @@ function watchTxStatus(txid: string, cb: (st: "MINED" | "REJECTED") => void): vo
 }
 
 export default function App() {
-  const [save, setSave] = useSave();
+  const [save, setSave, changedAt] = useSave();
   // Shared listing URLs must land on the Market tab — the detail sheet
   // only exists there; otherwise buyers just see their active pet.
   const [tab, setTab] = useState<Tab>(() => {
@@ -80,6 +83,11 @@ export default function App() {
   const bsv = useBsv();
   const season = seasonKey();
   const tw = useTwetch();
+  const sync = useSync({
+    save, setSave, changedAt,
+    token: tw.session?.accessToken ?? null,
+    sub: tw.session?.sub ?? null,
+  });
 
   useEffect(() => {
     void tw.settleCallback().then((ok) => {
@@ -460,7 +468,7 @@ export default function App() {
           <MarketTab busy={busy} setBusy={setBusy} say={say} tw={tw.session} onLogin={() => startLogin()} />
         )}
         {tab === "bsv" && (
-          <BsvTab busy={busy} setBusy={setBusy} say={say} verifyMsg={verifyMsg} setVerifyMsg={setVerifyMsg} tw={tw.session} onLogin={() => startLogin()} onLogout={() => { tw.logout(); say("Signed out"); }} />
+          <BsvTab busy={busy} setBusy={setBusy} say={say} verifyMsg={verifyMsg} setVerifyMsg={setVerifyMsg} tw={tw.session} onLogin={() => startLogin()} onLogout={() => { tw.logout(); say("Signed out"); }} save={save} setSave={setSave} sync={sync} />
         )}
       </main>
 
@@ -1363,12 +1371,12 @@ function MarketTab({ busy, setBusy, say, tw, onLogin }: {
   );
 }
 
-function BsvTab({ busy, setBusy, say, verifyMsg, setVerifyMsg, tw, onLogin, onLogout }: {
+function BsvTab({ busy, setBusy, say, verifyMsg, setVerifyMsg, tw, onLogin, onLogout, save, setSave, sync }: {
   busy: string | null; setBusy(s: string | null): void; say(t: string): void;
   verifyMsg: string | null; setVerifyMsg(s: string | null): void;
   tw: TwetchSession | null; onLogin(): void; onLogout(): void;
+  save: Save; setSave: Dispatch<SetStateAction<Save>>; sync: SyncStatus;
 }) {
-  const [save, setSave] = useSave();
   const bsv = useBsv();
   const season = seasonKey();
   const [winnerUid, setWinnerUid] = useState(save.activeUid ?? save.pets[0]?.uid ?? "");
@@ -1378,6 +1386,7 @@ function BsvTab({ busy, setBusy, say, verifyMsg, setVerifyMsg, tw, onLogin, onLo
 
   // Reconcile: clear NFT records whose mint tx died on-chain (e.g. lost a
   // double-spend race) so the pet can be re-minted. Funds never moved.
+  const syncNote = sync.state === "synced" ? "☁ " : sync.state === "syncing" ? "⟳ " : sync.state === "error" ? "⚠ " : sync.state === "auth" ? "🔑 " : "☁ ";
   const reconciled = useRef(false);
   useEffect(() => {
     if (reconciled.current) return;
@@ -1514,6 +1523,7 @@ function BsvTab({ busy, setBusy, say, verifyMsg, setVerifyMsg, tw, onLogin, onLo
 
   return (
     <div className="bsvwrap">
+      <p className="muted">{syncNote}{sync.note}</p>
       <section className="card">
         <h2>𝕋 Twetch identity</h2>
         {tw ? (

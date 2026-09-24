@@ -12,6 +12,10 @@
   ],
   // Static assets are the SPA built with base `/` (npm run build:subdomain);
   // the portfolio build keeps its own /pocketpets/ base for scripts/deploy-entangleit.sh.
+  "durable_objects": {
+    "bindings": [{ "name": "SYNC", "class_name": "PetSync" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["PetSync"] }],
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",

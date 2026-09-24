@@ -1,18 +1,86 @@
 /**
- * PocketPets: static assets for pocketpets.entangleit.com, a legacy redirect
- * for entangleit.com/pocketpets, and a one-way migration bridge for saves
- * that live in the old portfolio origin's localStorage.
+ * PocketPets worker: static assets for pocketpets.entangleit.com, the legacy
+ * /pocketpets redirect + migration bridge, and per-account save sync.
  *
- * The app's state (pets, coins, the PIN-encrypted built-in wallet key) is
- * per-origin localStorage. Moving the app from entangleit.com/pocketpets to
- * its own subdomain changed the origin, so old data is invisible until the
- * browser on the old origin hands it over. `/pocketpets/migrate` runs on
- * entangleit.com and reads it; `/_migrate` runs on the subdomain and writes
- * it back (then redirects into the app).
+ * Sync stores the game save and the PIN-encrypted built-in wallet blob in a
+ * Durable Object keyed by Twetch `sub`. The blob can only be decrypted by
+ * the player's PIN on a device, so the server never holds a usable key.
+ * Requests authenticate with the OIDC access token, verified against the
+ * issuer's /userinfo; the DO is forward-only and trusts the worker's sub.
  */
+const ISSUER = "https://id.entangleit.com";
+const MAX_SAVE_BYTES = 2_000_000;
+const MAX_KEY_BYTES = 20_000;
+
+const tokenCache = new Map(); // sha256(token) -> { sub, exp }
+
+export class PetSync {
+  constructor(state, env) {
+    this.storage = state.storage;
+    this.env = env;
+  }
+
+  async fetch(request) {
+    const url = new URL(request.url);
+    const body = request.method === "POST" ? await request.json().catch(() => ({})) : {};
+    if (url.pathname === "/pull") return this.pull();
+    if (url.pathname === "/push") return this.push(body);
+    return json({ error: "not found" }, 404);
+  }
+
+  async pull() {
+    const blob = await this.storage.get("blob");
+    if (!blob) return json({ empty: true, rev: 0, updatedAt: 0, save: null, keyBlob: "" });
+    return json({ rev: blob.rev, updatedAt: blob.updatedAt, save: blob.save, keyBlob: blob.keyBlob ?? "" });
+  }
+
+  async push(body) {
+    const updatedAt = Math.floor(Number(body.updatedAt) || 0);
+    if (body.save === undefined || body.save === null || !updatedAt) {
+      return json({ error: "save and updatedAt required" }, 400);
+    }
+    const raw = JSON.stringify(body.save);
+    if (raw.length > MAX_SAVE_BYTES) return json({ error: "save too large" }, 413);
+    const keyBlob = typeof body.keyBlob === "string" ? body.keyBlob : "";
+    if (keyBlob.length > MAX_KEY_BYTES) return json({ error: "key blob too large" }, 413);
+
+    const current = await this.storage.get("blob");
+    const baseRev = Math.floor(Number(body.baseRev) || 0);
+    if (current && current.rev !== baseRev) {
+      // The client resolves by updatedAt: adopt ours or re-push on top of it.
+      return json(
+        { error: "conflict", rev: current.rev, updatedAt: current.updatedAt, save: current.save, keyBlob: current.keyBlob ?? "" },
+        409,
+      );
+    }
+    const next = {
+      rev: (current?.rev ?? 0) + 1,
+      updatedAt,
+      save: body.save,
+      keyBlob: keyBlob || current?.keyBlob || "",
+      // one generation of history so a resolved conflict is never destructive
+      prev: current ? { rev: current.rev, updatedAt: current.updatedAt, save: current.save } : null,
+    };
+    await this.storage.put("blob", next);
+    return json({ rev: next.rev, updatedAt: next.updatedAt });
+  }
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    if (url.pathname === "/api/sync/pull" || url.pathname === "/api/sync/push") {
+      const sub = await verifyBearer(request);
+      if (!sub) return json({ error: "invalid or expired token — sign in again" }, 401);
+      const path = url.pathname === "/api/sync/pull" ? "/pull" : "/push";
+      const body = request.method === "POST" ? await request.text() : "{}";
+      return env.SYNC.get(env.SYNC.idFromName(`u:${sub}`)).fetch(`https://sync.internal${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body,
+      });
+    }
 
     // Old-origin export page.
     if (url.hostname === "entangleit.com" && url.pathname === "/pocketpets/migrate") {
@@ -46,6 +114,33 @@ export default {
     return res;
   },
 };
+
+async function verifyBearer(request) {
+  const auth = request.headers.get("authorization") ?? "";
+  const m = /^Bearer\s+(.+)$/i.exec(auth);
+  const token = m ? m[1].trim() : "";
+  if (!token) return null;
+  const key = await sha256Hex(token);
+  const hit = tokenCache.get(key);
+  if (hit && hit.exp > Date.now()) return hit.sub;
+  const res = await fetch(`${ISSUER}/userinfo`, { headers: { authorization: `Bearer ${token}` } });
+  if (!res.ok) return null;
+  const ui = await res.json().catch(() => null);
+  const sub = ui && ui.sub !== undefined ? String(ui.sub) : "";
+  if (!sub) return null;
+  if (tokenCache.size > 500) tokenCache.clear();
+  tokenCache.set(key, { sub, exp: Date.now() + 5 * 60_000 });
+  return sub;
+}
+
+async function sha256Hex(text) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest), (x) => x.toString(16).padStart(2, "0")).join("");
+}
+
+function json(data, status = 200) {
+  return Response.json(data, { status });
+}
 
 function html(body) {
   return new Response(body, {
@@ -103,7 +198,7 @@ async function importPage(request) {
   }
   const save = String(form.get("save") ?? "");
   const key = String(form.get("key") ?? "");
-  if (save.length > 2_000_000 || key.length > 20_000) return new Response("too large", { status: 413 });
+  if (save.length > MAX_SAVE_BYTES || key.length > MAX_KEY_BYTES) return new Response("too large", { status: 413 });
   if (save) {
     try {
       JSON.parse(save);
