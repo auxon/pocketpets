@@ -83,6 +83,18 @@ export async function ensureOsAddress(): Promise<string> {
   return bal.address;
 }
 
+/**
+ * Plain-English wallet errors. The runner's bridge can die when its window
+ * outlives the supervising process; that surfaces as a raw fetch failure.
+ */
+export function describeOsError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (/BRIDGE_DOWN|Failed to fetch|NO_BRIDGE|bridge/i.test(msg)) {
+    return "OS wallet bridge is unreachable — reopen the app with: bsv app open pocketpets.entangleit.com";
+  }
+  return msg;
+}
+
 /** Test hook: drop the cached address. */
 export function __resetOsSession(): void {
   cachedAddress = null;

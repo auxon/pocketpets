@@ -14,7 +14,7 @@ import {
 import { drawPetCard, useBsv } from "./bsv";
 import { arcStatus, p2pkhScript } from "./embedded.ts";
 import { embeddedSession, useEmbeddedWallet } from "./embwallet";
-import { ensureOsAddress, isOsWallet, osBsv, osSession } from "./oswallet";
+import { describeOsError, ensureOsAddress, isOsWallet, osBsv, osSession } from "./oswallet";
 import { gwAnchor, gwAtomicBuy, gwAtomicList, gwEnter, gwFoodRefill, gwMarketBuy, gwMint, gwPayout, gwPull, gwTransferNft, type GW } from "./gw";
 import { cancelListing, fetchListing, fetchRecentSales, fetchTxDetails, listMarket, markBought, markSettled, postListing, type MarketListing } from "./market";
 import { startLogin, useTwetch, type TwetchSession } from "./twetch";
@@ -677,7 +677,7 @@ function WalletCard({ say }: { say(t: string): void }) {
       setOsBal(b.confirmed + b.unconfirmed);
       setOsErr(null);
     } catch (e) {
-      setOsErr(e instanceof Error ? e.message : "OS wallet unreachable");
+      setOsErr(describeOsError(e));
     }
   };
 
